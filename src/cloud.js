@@ -64,6 +64,7 @@ export function addCloudSync(storage) {
     storage.accountLabel=owner?'Account':'Sign in'
     const legacyOwner=Object.keys(localStorage).find(key=>key.startsWith('folio:') && /:(revision|dirty)$/.test(key))?.split(':')[1]
     storage.selectAccount(owner,legacyOwner)
+    if (!data.session) accountDialog(client, null)
     if(owner) {
       button.textContent='Account sync · refresh'
       if(navigator.onLine) {
@@ -78,4 +79,5 @@ export function addCloudSync(storage) {
   }
   window.addEventListener('online',enqueue)
 }
+
 
