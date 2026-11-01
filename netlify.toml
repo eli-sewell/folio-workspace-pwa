@@ -1,0 +1,5 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+[build.environment]
+  ELECTRON_SKIP_BINARY_DOWNLOAD = "1"
