@@ -1,3 +1,4 @@
+import { accountDialog } from './account.js'
 import { createClient } from '@supabase/supabase-js'
 
 const client = createClient('https://xvtwyofntrthslipqifo.supabase.co','sb_publishable_NoIJ6Y60dYUE7dVV2wt2xQ_MX59G1wx')
@@ -52,25 +53,17 @@ export function addCloudSync(storage) {
     localStorage.removeItem(metadata('dirty'))
     location.reload()
   }
-  button.onclick = async () => {
-    try {
-      if(!owner) {
-        const email = prompt('Email address for your Folio sign-in link')
-        if(!email) return
-        const {error} = await client.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin}})
-        if(error) throw error
-        button.textContent = 'Check your email'
-        return
-      }
-      document.dispatchEvent(new Event('folio-flush'))
-      await pending
-      await pull()
-      await enqueue()
-    } catch(error) {button.textContent='Retry sync';alert(error.message)}
+  button.hidden=true
+  window.folioAccount=async()=>{
+    const {data}=await client.auth.getSession()
+    accountDialog(client,data.session,async()=>{await window.folio.flushNow?.();await pending;await pull();await enqueue()})
   }
   storage.load = async () => {
     const {data} = await client.auth.getSession()
     owner = data.session?.user.id
+    storage.accountLabel=owner?'Account':'Sign in'
+    const legacyOwner=Object.keys(localStorage).find(key=>key.startsWith('folio:') && /:(revision|dirty)$/.test(key))?.split(':')[1]
+    storage.selectAccount(owner,legacyOwner)
     if(owner) {
       button.textContent='Account sync · refresh'
       if(navigator.onLine) {
@@ -85,3 +78,4 @@ export function addCloudSync(storage) {
   }
   window.addEventListener('online',enqueue)
 }
+

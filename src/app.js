@@ -28,7 +28,7 @@ async function persist(){clearTimeout(saveTimer);if(loadFailed)return;saveState=
 function changed(d){if(d)d.updated=Date.now();clearTimeout(saveTimer);saveState='Saving…';updateSaveLabel();saveTimer=setTimeout(persist,350);}
 function flushEditor(){if(editor){const d=docById(current.doc);if(d&&d.kind!=='collection'&&d.kind!=='board')d.content=editor.getJSON();}}
 function dispose(){flushEditor();if(editor){editor.destroy();editor=null;}if(boardCleanup){boardCleanup();boardCleanup=null;}}
-function navigate(view,doc=null,folder=null){dispose();current={view,doc,folder};libraryQuery='';render();$('#main')?.scrollTo(0,0);}
+function navigate(view,doc=null,folder=null){document.body.classList.remove('drawer-open');dispose();current={view,doc,folder};libraryQuery='';render();$('#main')?.scrollTo(0,0);}
 function newDoc(template=null,extra={}){const d={id:id(),title:template?.name||'Untitled',emoji:template?.emoji||'✦',cover:null,content:{type:'doc',content:clone(template?.content||[p()])},tags:[],space:activeSpace,folder:current.folder||null,created:Date.now(),updated:Date.now(),...extra};db.docs.push(d);changed(d);navigate('doc',d.id);setTimeout(()=>{$('#doc-title')?.focus();$('#doc-title')?.select();},50);return d;}
 function dateTitle(date){return new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}
 function daily(date=today()){let d=liveDocs().find(d=>d.daily===date);if(!d)d=newDoc(null,{title:dateTitle(date),emoji:'☀',daily:date,content:{type:'doc',content:[heading('On my mind'),p(),heading('Today’s focus'),{type:'taskList',content:[task('One thing that matters today')]}]}});else navigate('doc',d.id);}
@@ -40,6 +40,9 @@ function render(){
  document.documentElement.dataset.theme=db.settings.theme||'light';
  const space=db.spaces.find(s=>s.id===activeSpace)||db.spaces[0];activeSpace=space.id;
  $('#app').innerHTML=`<aside class="sidebar"><div class="brand"><div class="brand-mark">f</div><strong>folio</strong>${ib('settings','Settings','settings-2')}</div><button class="space-switch" data-action="spaces"><span class="space-avatar">${esc(space.emoji||'◒')}</span><span>${esc(space.name)}<small>Private workspace</small></span>${icon('chevrons-up-down')}</button><button class="search-nav" data-action="search">${icon('search')}<span>Search anything</span><kbd>Ctrl K</kbd></button><nav>${btn('home','All documents','files',`class="nav-item ${current.view==='all'&&!current.folder?'active':''}"`)}${btn('today','Daily notes','calendar-days',`class="nav-item ${current.view==='calendar'?'active':''}"`)}${btn('tasks','Tasks','circle-check',`class="nav-item ${current.view==='tasks'?'active':''}"`)}${btn('favorites','Starred','star',`class="nav-item ${current.view==='favorites'?'active':''}"`)}</nav><div class="side-heading"><span>FOLDERS</span>${ib('add-folder','New folder','plus')}</div><div class="folders">${folderTree()}</div><div class="side-heading"><span>STARRED</span></div><div class="starred-list">${liveDocs().filter(d=>d.starred).slice(0,6).map(d=>`<button class="nav-item small ${current.doc===d.id?'active':''}" data-action="open" data-id="${d.id}"><span class="tiny-emoji">${esc(d.emoji)}</span><span>${esc(d.title)}</span></button>`).join('')||'<span class="sidebar-empty">Keep favorites close.</span>'}</div><div class="sidebar-bottom">${btn('templates','Templates','layout-template',`class="nav-item ${current.view==='templates'?'active':''}"`)}${btn('trash','Trash','trash-2',`class="nav-item ${current.view==='trash'?'active':''}"`)}<div class="local-badge">${icon('shield-check')}<span>Just you. Just this computer.</span></div></div></aside><section class="workspace"><header class="topbar"><div class="breadcrumbs">${ib('home','All documents','panel-left')}<span>${esc(space.name)}</span><span class="crumb-slash">/</span><span id="crumb-current"></span></div><div class="top-actions"><span id="save-status"></span>${ib('search','Search · Ctrl K','search')}${ib('new-menu','Create something','plus')}</div></header><main id="main"></main></section><div id="overlay"></div><div id="slash-root"></div><div id="toast" class="toast" role="status"></div>`;
+ const bar=$('.top-actions');
+ bar.insertAdjacentHTML('afterbegin',ib('reminders','Reminders','bell')+ib('quick-theme','Toggle dark mode','moon')+(window.folioAccount?btn('account',window.folio.accountLabel||'Account','','class="account-toggle"'):''));
+ $('.breadcrumbs button').dataset.action='drawer';$('.breadcrumbs button').setAttribute('aria-label','Navigation');
  renderMain();updateSaveLabel();refreshIcons();
  $$('.folder-row').forEach(el=>{el.ondragover=e=>{e.preventDefault();el.classList.add('drop-target');};el.ondragleave=()=>el.classList.remove('drop-target');el.ondrop=e=>{e.preventDefault();el.classList.remove('drop-target');const d=docById(dragDoc);if(d){d.folder=el.dataset.folder;d.parent=null;changed(d);navigate('all');toast('Moved to folder');}};});
 }
@@ -127,6 +130,11 @@ document.addEventListener('click',async e=>{
  const attachment=e.target.closest('a[data-attachment]');if(attachment){e.preventDefault();const a=document.createElement('a');a.href=attachment.href;a.download=attachment.download;a.click();return;}
  const el=e.target.closest('[data-action]');if(!el||el.disabled)return;const a=el.dataset.action,doc=docById(el.dataset.id)||docById(current.doc);try{
  switch(a){
+  case'drawer':if(matchMedia('(max-width:760px)').matches)document.body.classList.toggle('drawer-open');else navigate('all');break;
+  case'account':window.folioAccount?.();break;
+  case'quick-theme':db.settings.theme=db.settings.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=db.settings.theme;changed();break;
+  case'reminders':showReminders();break;
+  case'remove-reminder':db.reminders=db.reminders.filter(r=>r.id!==el.dataset.id);changed();showReminders();break;
   case'home':navigate('all');break;case'open':case'search-open':closeModal();navigate('doc',el.dataset.id);break;case'folder':navigate('all',null,el.dataset.id);break;
   case'today':navigate('calendar');break;case'daily':daily();break;case'daily-date':daily(el.dataset.date);break;case'tasks':navigate('tasks');break;case'favorites':navigate('favorites');break;case'trash':navigate('trash');break;case'templates':navigate('templates');break;
   case'new':closeModal();newDoc();break;case'new-menu':menu('What would you like to make?',[['new','Document','file-text'],['new-collection','Collection','table-2'],['new-board','Whiteboard','pencil-ruler'],['new-daily','Daily note','calendar'],['go-templates','From a template','layout-template']]);break;
@@ -179,7 +187,19 @@ document.addEventListener('click',async e=>{
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();return;}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();search();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();closeModal();newDoc();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();flushEditor();persist();}});
 document.addEventListener('keydown',e=>{if(e.key==='Tab'&&$('#overlay .modal')){const focusable=$$('button:not([hidden]),input,select,a[href],textarea',$('#overlay .modal')).filter(el=>!el.disabled&&el.offsetParent!==null);if(!focusable.length)return;const first=focusable[0],last=focusable.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
-async function boot(){try{db=await window.folio.load();if(!db){db=seed();await window.folio.save(db);}if(db.version!==1||!db.spaces?.length||!Array.isArray(db.docs)||!Array.isArray(db.folders))throw new Error('The workspace format is not supported.');db.settings||={theme:'light',font:'sans'};activeSpace=db.activeSpace||db.spaces[0].id;render();window.folio.onFlush(()=>{flushEditor();persist();});}catch(e){loadFailed=true;$('#app').innerHTML=`<div class="fatal-error"><h1>Your workspace is safe.</h1><p>Folio couldn’t open it, so no changes have been written.</p><pre>${esc(e.message)}</pre><p>Check workspace.json and workspace.json.bak in your Folio app data folder.</p></div>`;}}
+async function boot(){try{db=await window.folio.load();if(!db){db=seed();await window.folio.save(db);}if(db.version!==1||!db.spaces?.length||!Array.isArray(db.docs)||!Array.isArray(db.folders))throw new Error('The workspace format is not supported.');db.settings||={theme:'light',font:'sans'};activeSpace=db.activeSpace||db.spaces[0].id;render();window.folio.flushNow=async()=>{flushEditor();await persist()};window.folio.onFlush(()=>{flushEditor();persist();});}catch(e){loadFailed=true;$('#app').innerHTML=`<div class="fatal-error"><h1>Your workspace is safe.</h1><p>Folio couldn’t open it, so no changes have been written.</p><pre>${esc(e.message)}</pre><p>Check workspace.json and workspace.json.bak in your Folio app data folder.</p></div>`;}}
+function showReminders(){
+ db.reminders ||= [];
+ modal('<div class="modal-heading"><h2>Reminders</h2>'+ib('close-modal','Close','x')+'</div><p>Alerts appear while Folio is open. Overdue reminders appear when you return.</p><form id="reminder-form"><label class="field">Remind me to<input name="title" required></label><label class="field">When<input name="time" type="datetime-local" required></label><button class="primary">Add reminder</button></form>'+db.reminders.map(r=>'<p>'+esc(r.title)+' · '+esc(new Date(r.time).toLocaleString())+' '+ib('remove-reminder','Dismiss reminder','x','data-id="'+esc(r.id)+'"')+'</p>').join(''));
+ $('#reminder-form').onsubmit=e=>{e.preventDefault();const data=new FormData(e.target);db.reminders.push({id:id(),title:data.get('title'),time:new Date(data.get('time')).getTime()});changed();showReminders();checkReminders()};
+}
+function checkReminders(){
+ const due=db?.reminders?.filter(r=>!r.shown && r.time<=Date.now());
+ if(!due?.length||document.hidden)return;
+ due.forEach(r=>r.shown=true);changed();alert(due.map(r=>'Reminder: '+r.title).join('\n'));
+}
+setInterval(checkReminders,15000);document.addEventListener('visibilitychange',checkReminders);
 boot();
+
 
 
