@@ -8,6 +8,19 @@ export default {
       const version='folio-'+Object.keys(bundle).join('-')
       this.emitFile({type:'asset',fileName:'sw.js',source:`
 const cacheName=${JSON.stringify(version)};
+self.addEventListener('push',event=>{
+ const data=event.data?.json()||{};
+ event.waitUntil(self.registration.showNotification('Folio reminder',{body:data.title||'A reminder is due.',tag:'folio-reminder-'+data.id,icon:'./icon.svg'}));
+});
+self.addEventListener('notificationclick',event=>{
+ event.notification.close();
+ event.waitUntil((async()=>{
+  const pages=await clients.matchAll({type:'window',includeUncontrolled:true});
+  const page=pages.find(p=>new URL(p.url).origin===location.origin);
+  if(!page)return clients.openWindow('./?reminders=1');
+  await page.focus();page.postMessage('folio-open-reminders');
+ })());
+});
 self.addEventListener('install',event=>event.waitUntil(caches.open(cacheName).then(cache=>cache.addAll(${JSON.stringify(files)}))));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('folio-')&&key!==cacheName).map(key=>caches.delete(key))))));
 self.addEventListener('fetch',event=>{if(event.request.method==='GET'&&new URL(event.request.url).origin===location.origin)event.respondWith(caches.open(cacheName).then(async cache=>(await cache.match(event.request))||fetch(event.request)));});

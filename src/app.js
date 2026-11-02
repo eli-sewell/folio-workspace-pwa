@@ -190,16 +190,19 @@ document.addEventListener('keydown',e=>{if(e.key==='Tab'&&$('#overlay .modal')){
 async function boot(){try{db=await window.folio.load();if(!db){db=seed();await window.folio.save(db);}if(db.version!==1||!db.spaces?.length||!Array.isArray(db.docs)||!Array.isArray(db.folders))throw new Error('The workspace format is not supported.');db.settings||={theme:'light',font:'sans'};activeSpace=db.activeSpace||db.spaces[0].id;render();window.folio.flushNow=async()=>{flushEditor();await persist()};window.folio.onFlush(()=>{flushEditor();persist();});}catch(e){loadFailed=true;$('#app').innerHTML=`<div class="fatal-error"><h1>Your workspace is safe.</h1><p>Folio couldn’t open it, so no changes have been written.</p><pre>${esc(e.message)}</pre><p>Check workspace.json and workspace.json.bak in your Folio app data folder.</p></div>`;}}
 function showReminders(){
  db.reminders ||= [];
- modal('<div class="modal-heading"><h2>Reminders</h2>'+ib('close-modal','Close','x')+'</div><p>Alerts appear while Folio is open. Overdue reminders appear when you return.</p><form id="reminder-form"><label class="field">Remind me to<input name="title" required></label><label class="field">When<input name="time" type="datetime-local" required></label><button class="primary">Add reminder</button></form>'+db.reminders.map(r=>'<p>'+esc(r.title)+' · '+esc(new Date(r.time).toLocaleString())+' '+ib('remove-reminder','Dismiss reminder','x','data-id="'+esc(r.id)+'"')+'</p>').join(''));
+ modal('<div class="modal-heading"><h2>Reminders</h2>'+ib('close-modal','Close','x')+'</div><p>Reminders are saved with your workspace.</p><button id="push-opt" type="button" disabled>Device notifications</button><p id="push-info" role="status"></p><form id="reminder-form"><label class="field">Remind me to<input name="title" required></label><label class="field">When<input name="time" type="datetime-local" required></label><button class="primary">Add reminder</button></form>'+db.reminders.map(r=>'<p>'+esc(r.title)+' · '+esc(new Date(r.time).toLocaleString())+' '+ib('remove-reminder','Dismiss reminder','x','data-id="'+esc(r.id)+'"')+'</p>').join(''));
+ if(window.folioPushPanel)window.folioPushPanel($('#push-opt'),$('#push-info'));
+ else {$('#push-opt').hidden=true;$('#push-info').textContent='Alerts appear while Folio is open.'}
  $('#reminder-form').onsubmit=e=>{e.preventDefault();const data=new FormData(e.target);db.reminders.push({id:id(),title:data.get('title'),time:new Date(data.get('time')).getTime()});changed();showReminders();checkReminders()};
 }
 function checkReminders(){
  const due=db?.reminders?.filter(r=>!r.shown && r.time<=Date.now());
  if(!due?.length||document.hidden)return;
- due.forEach(r=>r.shown=true);changed();alert(due.map(r=>'Reminder: '+r.title).join('\n'));
+ due.forEach(r=>r.shown=true);changed();if(window.folioPushOwner && localStorage.getItem('folio:push-device')===window.folioPushOwner && window.Notification?.permission==='granted' && navigator.onLine)return;alert(due.map(r=>'Reminder: '+r.title).join('\n'));
 }
 setInterval(checkReminders,15000);document.addEventListener('visibilitychange',checkReminders);
-boot();
+navigator.serviceWorker?.addEventListener('message',event=>{if(db && event.data==='folio-open-reminders')showReminders()});
+boot().then(()=>{if(new URLSearchParams(location.search).has('reminders')){history.replaceState(null,'',location.pathname);showReminders()}});
 
 
 

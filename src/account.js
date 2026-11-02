@@ -23,7 +23,7 @@ export function accountDialog(client, session, refresh) {
     actions.inert=true
     try {
       if(choice==='refresh'){await refresh();dialog.close();return}
-      if(choice==='logout'){await window.folio.flushNow?.();const {error}=await client.auth.signOut({scope:'local'});if(error)throw error;location.reload();return}
+      if(choice==='logout'){await window.folioDisablePush?.();await window.folio.flushNow?.();const {error}=await client.auth.signOut({scope:'local'});if(error)throw error;location.reload();return}
       const options={emailRedirectTo:location.origin}
       const result=choice==='login'?await client.auth.signInWithPassword(credentials):choice==='signup'?await client.auth.signUp({...credentials,options}):await client.auth.signInWithOtp({email:credentials.email,options})
       if(result.error)throw result.error

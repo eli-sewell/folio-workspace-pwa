@@ -1,8 +1,10 @@
+import { configurePush } from './push.js'
 import { accountDialog } from './account.js'
 import { createClient } from '@supabase/supabase-js'
 
 const client = createClient('https://xvtwyofntrthslipqifo.supabase.co','sb_publishable_NoIJ6Y60dYUE7dVV2wt2xQ_MX59G1wx')
 export function addCloudSync(storage) {
+  configurePush(client)
   const { load, save } = storage
   let owner, timer, pending = Promise.resolve()
   const metadata = key => 'folio:' + owner + ':' + key
@@ -61,6 +63,7 @@ export function addCloudSync(storage) {
   storage.load = async () => {
     const {data} = await client.auth.getSession()
     owner = data.session?.user.id
+    window.folioPushOwner=owner
     storage.accountLabel=owner?'Account':'Sign in'
     const legacyOwner=Object.keys(localStorage).find(key=>key.startsWith('folio:') && /:(revision|dirty)$/.test(key))?.split(':')[1]
     storage.selectAccount(owner,legacyOwner)
