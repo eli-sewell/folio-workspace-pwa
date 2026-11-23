@@ -58,3 +58,29 @@ npm start
 `npm test` runs interaction and persistence tests in an isolated workspace. `npm run package` builds the portable Windows executable. `npm run dev` serves the renderer for development, but the app’s persistence bridge is available only inside Electron.
 
 The application is unsigned. No signing certificate was configured for this local build.
+
+## Self-hosted server (Phase 1)
+
+The Compose stack runs one Node 24 process. It serves the existing Vite build and exposes a local API for accounts, sessions, and workspaces. SQLite lives in the `folio-data` Docker volume on the Debian host, so recreating the container preserves the database. The PWA still uses its existing Supabase integration in this phase. Use test accounts and sample workspaces for the new API until the frontend switches over.
+
+Start the stack for a local check:
+
+```sh
+docker compose up -d --build --wait
+curl -fsS http://127.0.0.1:3000/api/health
+```
+
+Compose publishes port 3000 on the host's loopback address. To reach it from the tailnet, enable HTTPS for the tailnet, then run `tailscale serve --bg http://127.0.0.1:3000` on the Debian host. Set `FOLIO_ORIGIN` in a local Compose `.env` to the exact HTTPS origin printed by Serve, and run `docker compose up -d --wait` again. Use Tailscale access rules to limit who can reach the server. The configured origin is used to verify browser write requests.
+
+Create a test account from a Bash shell. Reading the password silently keeps it out of shell history and process arguments.
+
+```bash
+read -rs -p 'Folio password (at least 12 characters): ' folio_password
+printf '\n'
+printf '%s\n' "$folio_password" | docker compose exec -T folio node server/account.mjs create you@example.com
+unset folio_password
+```
+
+The account command also supports `reset-password EMAIL` with the same stdin input. A reset revokes existing sessions. There is no public signup endpoint. The API issues a secure session cookie and enforces workspace ownership. Each write supplies the revision it started from, so stale edits receive a conflict response.
+
+Use `docker compose down` to stop the stack and preserve the data volume. Removing the volume deletes its SQLite database. For a local API test run `npm run test:server` on Node 24. Run `npm run build` first if you also want to open the PWA through `npm run serve`. Set `FOLIO_DB` to a writable database path for a non-container run.

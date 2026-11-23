@@ -1,0 +1,20 @@
+services:
+  folio:
+    build: .
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FOLIO_PORT:-3000}:3000"
+    environment:
+      FOLIO_ORIGIN: "${FOLIO_ORIGIN:-http://localhost:${FOLIO_PORT:-3000}}"
+    volumes:
+      - folio-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r => { if (!r.ok) process.exitCode = 1 }).catch(() => { process.exitCode = 1 })"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  folio-data:
