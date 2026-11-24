@@ -61,7 +61,7 @@ The application is unsigned. No signing certificate was configured for this loca
 
 ## Self-hosted server (Phase 1)
 
-The Compose stack runs one Node 24 process. It serves the existing Vite build and exposes a local API for accounts, sessions, and workspaces. SQLite lives in the `folio-data` Docker volume on the Debian host, so recreating the container preserves the database. The PWA still uses its existing Supabase integration in this phase. Use test accounts and sample workspaces for the new API until the frontend switches over.
+The Compose stack runs one Node 24 process. It serves the existing Vite build and exposes a local API for accounts, sessions, and workspaces. SQLite lives in the `folio-data` Docker volume on the Debian host, so recreating the container preserves the database. See the Phase 2 section for the PWA connection. Use test accounts and sample workspaces until the data migration.
 
 Start the stack for a local check:
 
@@ -84,3 +84,44 @@ unset folio_password
 The account command also supports `reset-password EMAIL` with the same stdin input. A reset revokes existing sessions. There is no public signup endpoint. The API issues a secure session cookie and enforces workspace ownership. Each write supplies the revision it started from, so stale edits receive a conflict response.
 
 Use `docker compose down` to stop the stack and preserve the data volume. Removing the volume deletes its SQLite database. For a local API test run `npm run test:server` on Node 24. Run `npm run build` first if you also want to open the PWA through `npm run serve`. Set `FOLIO_DB` to a writable database path for a non-container run.
+
+## Self-hosted PWA (Phase 2)
+
+Docker builds the self-hosted PWA. For a non-container run, build it with
+`npm run build:self-hosted` and start the local API with `npm run serve`.
+The default `npm run build` remains the Netlify/Electron build.
+
+Sign in using an account created on the server. Folio saves edits to the
+browser first and syncs the complete workspace to SQLite when connected.
+Edits made while signed out remain in the guest workspace. Export the guest
+workspace before signing in if you want to bring those notes into an account.
+Signing out leaves account drafts and caches in browser storage. Clear site data
+to remove them from a shared device after exporting anything you need.
+
+Folio checks the server when it starts, reconnects, or regains focus, and every
+15 seconds while visible. If two tabs or devices change the same workspace
+revision, the first save wins on the server. The other draft stays on its device.
+In **Account**, download that draft or open the server copy after Folio starts a
+draft download. The **Download pending drafts** option also recovers device-local
+drafts from other tabs. If it downloads several drafts in one JSON file, each
+array entry is a separate workspace backup. Background push on the self-hosted
+origin is planned for Phase 3. Reminders still alert while Folio is open.
+
+Run `npm run build:self-hosted && npm run test:web` to check sync in Chromium.
+Use `npx playwright install chromium` if Playwright's browser is missing, or
+set `FOLIO_CHROMIUM` to your installed Chromium executable.
+
+### Future phase — n8n integration
+
+Provide a versioned REST API for n8n to list, read, and create notes, tasks, and
+reminders. Add calendar event endpoints only if Folio gains a separate event
+model. The existing calendar displays daily notes and task due dates.
+
+Use owner-bound, revocable credentials with independent read/create scopes per
+resource. Store token hashes in Folio and keep the token itself in n8n's
+credentials store. Document endpoints and errors with OpenAPI and include
+examples for n8n's HTTP Request node. Use a private HTTPS endpoint, enforce
+authorization on every route, and support idempotency keys on creates so workflow
+retries do not create duplicates. REST writes must participate in the same
+workspace revision checks as PWA writes. n8n should access Folio through HTTPS
+and keep its own credentials and data volume.

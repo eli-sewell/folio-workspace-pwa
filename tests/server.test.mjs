@@ -35,10 +35,10 @@ test('local accounts, session revocation, workspace ownership and revision check
     const result = spawnSync(process.execPath, ['server/account.mjs', command, email], { env, input, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
   }
-  function request(path, { method = 'GET', cookie, body, from = origin } = {}) {
+  function request(path, { method = 'GET', cookie, body, from = origin, headers = {} } = {}) {
     return fetch(base + '/api/' + path, {
       method,
-      headers: { Origin: from, ...(cookie && { Cookie: cookie }), ...(body && { 'Content-Type': 'application/json' }) },
+      headers: { ...headers, Origin: from, ...(cookie && { Cookie: cookie }), ...(body && { 'Content-Type': 'application/json' }) },
       body: body && JSON.stringify(body),
     });
   }
@@ -59,13 +59,16 @@ test('local accounts, session revocation, workspace ownership and revision check
   assert.equal((await request('login', { method: 'POST', body: { email: 'one@example.test', password: 'wrong' } })).status, 401);
   const first = await login('ONE@example.test');
   const second = await login('two@example.test');
-  const workspace = { version: 1, spaces: [{ id: 'space' }], folders: [], docs: [] };
+  const workspace = { version: 1, spaces: [{ id: 'space', name: 'Test space' }], folders: [], docs: [] };
   const save = (revision, value = workspace) => request('workspace', { method: 'PUT', cookie: first, body: { revision, workspace: value } });
   assert.equal((await save(null, { version: 2 })).status, 400);
   const initial = await save(null);
   assert.equal(initial.status, 200);
   const { revision } = await initial.json();
   assert.equal(await (await request('workspace', { cookie: second })).json(), null);
+  const identity = await (await request('session', { cookie: first })).json();
+  assert.equal((await request('workspace', { cookie: second, headers: { 'X-Folio-Account': identity.id } })).status, 401);
+  assert.equal((await request('workspace', { cookie: first, headers: { 'If-None-Match': '"' + revision + '"' } })).status, 304);
   const edits = await Promise.all([save(revision), save(revision)]);
   assert.deepEqual(edits.map(response => response.status).sort(), [200, 409]);
   const latest = await edits.find(response => response.ok).json();

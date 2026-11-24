@@ -6,6 +6,7 @@ import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSession, normalizeEmail, sessionCookie, sessionHash, verifyPassword } from './auth.mjs';
 import { openDatabase } from './db.mjs';
+import { validWorkspace } from './workspace.mjs';
 
 const dist = fileURLToPath(new URL('../dist', import.meta.url));
 const origin = new URL(process.env.FOLIO_ORIGIN || 'http://localhost:3000').origin;
@@ -107,6 +108,11 @@ async function api(request, response, path, db) {
 
   const hash = sessionHash(request);
   if (route === 'POST /api/logout') {
+    const expected = request.headers['x-folio-account'];
+    if (hash && expected) {
+      const session = db.prepare('SELECT owner_id FROM sessions WHERE token_hash = ?').get(hash);
+      if (session && session.owner_id !== expected) throw new RequestError(401, 'This session belongs to a different account.');
+    }
     if (hash) db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hash);
     response.setHeader('Set-Cookie', sessionCookie());
     response.writeHead(204).end();
@@ -117,17 +123,27 @@ async function api(request, response, path, db) {
     JOIN accounts ON accounts.id = sessions.owner_id
     WHERE token_hash = ? AND expires_at > ?
   `).get(hash, Date.now());
-  if (!account) throw new RequestError(401, 'Sign in required.');
+  if (!account || (request.headers['x-folio-account'] && request.headers['x-folio-account'] !== account.id)) {
+    throw new RequestError(401, 'Sign in to the account that owns this workspace.');
+  }
   if (route === 'GET /api/session') return json(response, 200, account);
   if (route === 'GET /api/workspace') {
-    const row = db.prepare('SELECT revision, workspace FROM workspaces WHERE owner_id = ?').get(account.id);
-    return json(response, 200, row ? { revision: row.revision, workspace: JSON.parse(row.workspace) } : null);
+    const row = db.prepare(`
+      SELECT revision, CASE WHEN '"' || revision || '"' <> ? THEN workspace END AS workspace
+      FROM workspaces WHERE owner_id = ?
+    `).get(request.headers['if-none-match'] || '', account.id);
+    if (!row) return json(response, 200, null);
+    response.setHeader('ETag', '"' + row.revision + '"');
+    if (row.workspace === null) {
+      response.writeHead(304).end();
+      return;
+    }
+    return json(response, 200, { revision: row.revision, workspace: JSON.parse(row.workspace) });
   }
 
   const { revision, workspace } = await readJson(request, workspaceLimit);
   if ((revision !== null && (typeof revision !== 'string' || revision.length > 64)) ||
-      workspace?.version !== 1 || !Array.isArray(workspace.docs) ||
-      !Array.isArray(workspace.folders) || !Array.isArray(workspace.spaces) || !workspace.spaces.length) {
+      !validWorkspace(workspace)) {
     throw new RequestError(400, 'Invalid workspace or revision.');
   }
   const next = randomUUID();
