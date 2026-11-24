@@ -59,31 +59,74 @@ npm start
 
 The application is unsigned. No signing certificate was configured for this local build.
 
-## Self-hosted server (Phase 1)
+## Deploy on Debian
 
-The Compose stack runs one Node 24 process. It serves the existing Vite build and exposes a local API for accounts, sessions, and workspaces. SQLite lives in the `folio-data` Docker volume on the Debian host, so recreating the container preserves the database. See the Phase 2 section for the PWA connection. Use test accounts and sample workspaces until the data migration.
-
-Start the stack for a local check:
+Use the `self-hosted/phase-2` branch and a dedicated directory.
 
 ```sh
-docker compose up -d --build --wait
-curl -fsS http://127.0.0.1:3000/api/health
+git clone --branch self-hosted/phase-2 --single-branch https://github.com/eli-sewell/folio-workspace-pwa.git ~/folio-self-hosted
+cd ~/folio-self-hosted
+docker compose ls --all
+ss -ltn '( sport = :3318 or sport = :8443 )'
+tailscale serve status
+tailscale funnel status
 ```
 
-Compose publishes port 3000 on the host's loopback address. To reach it from the tailnet, enable HTTPS for the tailnet, then run `tailscale serve --bg http://127.0.0.1:3000` on the Debian host. Set `FOLIO_ORIGIN` in a local Compose `.env` to the exact HTTPS origin printed by Serve, and run `docker compose up -d --wait` again. Use Tailscale access rules to limit who can reach the server. The configured origin is used to verify browser write requests.
+The first two commands check out the deployment branch. Check that `folio-home`
+is available as a Compose project name, 3318 and 8443 have no listeners, and
+Tailscale Serve and Funnel have no route using 8443. If either port is in use,
+choose another and use it consistently in the commands below. Enable HTTPS
+certificates for your tailnet if needed, then add a private Serve listener on
+Folio's own HTTPS port.
 
-Create a test account from a Bash shell. Reading the password silently keeps it out of shell history and process arguments.
+```sh
+sudo tailscale serve --bg --https=8443 http://127.0.0.1:3318
+```
+
+Create `.env` in the checkout. Replace the example origin with the exact URL
+printed by Serve, including the HTTPS port and omitting the trailing slash.
+
+```dotenv
+FOLIO_PORT=3318
+FOLIO_ORIGIN=https://optiplex.example-tailnet.ts.net:8443
+```
+
+`FOLIO_PORT` sets the host loopback port that Serve connects to. The container
+still listens on port 3000 internally. `FOLIO_ORIGIN` tells the API which
+browser origin may send write requests. If tailnet access rules restrict ports,
+allow the intended users and devices to reach the Folio HTTPS port.
+
+```sh
+docker compose -p folio-home config
+docker compose -p folio-home up -d --build --wait
+curl -fsS http://127.0.0.1:3318/api/health
+```
+
+`config` shows the resolved Compose configuration. `up` builds the image,
+starts it in the background, and waits for its health check. On first start
+the server initializes SQLite at `/data/folio.sqlite` in the
+`folio-home_folio-data` Docker volume. The health request should return
+`{"status":"ok"}`. Use a fresh workspace and test data until the migration.
+
+Create a Folio account from Bash. The password prompt is silent, and the
+password is passed through stdin.
 
 ```bash
 read -rs -p 'Folio password (at least 12 characters): ' folio_password
 printf '\n'
-printf '%s\n' "$folio_password" | docker compose exec -T folio node server/account.mjs create you@example.com
+printf '%s\n' "$folio_password" | docker compose -p folio-home exec -T folio node server/account.mjs create you@example.com
 unset folio_password
 ```
 
-The account command also supports `reset-password EMAIL` with the same stdin input. A reset revokes existing sessions. There is no public signup endpoint. The API issues a secure session cookie and enforces workspace ownership. Each write supplies the revision it started from, so stale edits receive a conflict response.
+Replace the example email with your own. The account command also supports
+`reset-password EMAIL` with the same stdin input. A reset revokes existing
+sessions. Open the Serve URL from a tailnet device and sign in. You can also
+append `/api/health` to that URL to verify the HTTPS route.
 
-Use `docker compose down` to stop the stack and preserve the data volume. Removing the volume deletes its SQLite database. For a local API test run `npm run test:server` on Node 24. Run `npm run build` first if you also want to open the PWA through `npm run serve`. Set `FOLIO_DB` to a writable database path for a non-container run.
+Use `docker compose -p folio-home down` to stop Folio and preserve its data
+volume. To remove only Folio's Tailscale route, run
+`sudo tailscale serve --https=8443 off` using the HTTPS port you selected.
+Removing the Docker volume deletes the SQLite database.
 
 ## Self-hosted PWA (Phase 2)
 
