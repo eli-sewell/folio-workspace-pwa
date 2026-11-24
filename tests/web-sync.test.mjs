@@ -12,7 +12,7 @@ test('the self-hosted PWA syncs two devices and preserves an offline conflicting
   const directory = await mkdtemp(join(tmpdir(), 'folio-web-'));
   const email = 'web@example.test';
   const password = 'browser test password';
-  const env = { ...process.env, HOST: '127.0.0.1', PORT: '0', FOLIO_DB: join(directory, 'folio.sqlite') };
+  const env = { ...process.env, HOST: '127.0.0.1', PORT: '0', FOLIO_DB: join(directory, 'folio.sqlite'), FOLIO_DISABLE_JOBS: '1' };
   const portProbe = createServer().listen(0, '127.0.0.1');
   await once(portProbe, 'listening');
   const port = portProbe.address().port;

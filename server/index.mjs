@@ -6,6 +6,8 @@ import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSession, normalizeEmail, sessionCookie, sessionHash, verifyPassword } from './auth.mjs';
 import { openDatabase } from './db.mjs';
+import { startBackupScheduler } from './backup.mjs';
+import { ensurePushConfig, listPushDevices, registerPushDevice, removePushDevice, startPushScheduler } from './push.mjs';
 import { validWorkspace } from './workspace.mjs';
 
 const dist = fileURLToPath(new URL('../dist', import.meta.url));
@@ -98,7 +100,8 @@ async function api(request, response, path, db) {
     db.prepare('SELECT 1 FROM accounts LIMIT 1').get();
     return json(response, 200, { status: 'ok' });
   }
-  if (!['GET /api/session', 'POST /api/login', 'POST /api/logout', 'GET /api/workspace', 'PUT /api/workspace'].includes(route)) {
+  if (!['GET /api/session', 'POST /api/login', 'POST /api/logout', 'GET /api/workspace', 'PUT /api/workspace',
+    'GET /api/push/key', 'GET /api/push/devices', 'POST /api/push/devices', 'DELETE /api/push/devices'].includes(route)) {
     throw new RequestError(404, 'Route not found.');
   }
   if (request.method !== 'GET' && request.headers.origin !== origin) {
@@ -127,6 +130,20 @@ async function api(request, response, path, db) {
     throw new RequestError(401, 'Sign in to the account that owns this workspace.');
   }
   if (route === 'GET /api/session') return json(response, 200, account);
+  if (route === 'GET /api/push/key') return json(response, 200, { publicKey: ensurePushConfig(db).public_key });
+  if (route === 'GET /api/push/devices') return json(response, 200, listPushDevices(db, account.id));
+  if (route === 'POST /api/push/devices') {
+    const { subscription } = await readJson(request, 8192);
+    registerPushDevice(db, account.id, subscription);
+    response.writeHead(204).end();
+    return;
+  }
+  if (route === 'DELETE /api/push/devices') {
+    const { endpoint } = await readJson(request, 8192);
+    removePushDevice(db, account.id, endpoint);
+    response.writeHead(204).end();
+    return;
+  }
   if (route === 'GET /api/workspace') {
     const row = db.prepare(`
       SELECT revision, CASE WHEN '"' || revision || '"' <> ? THEN workspace END AS workspace
@@ -186,6 +203,11 @@ async function serveAsset(request, response, path) {
 
 process.umask(0o077);
 const db = openDatabase();
+ensurePushConfig(db);
+const stopJobs = [];
+if (process.env.FOLIO_DISABLE_JOBS !== '1') {
+  stopJobs.push(startPushScheduler(db, origin), startBackupScheduler(db));
+}
 const server = createServer(async (request, response) => {
   response.setHeader('X-Content-Type-Options', 'nosniff');
   response.setHeader('Cache-Control', 'no-store');
@@ -211,5 +233,8 @@ server.listen(Number(process.env.PORT || 3000), process.env.HOST || '127.0.0.1',
   console.log(`Folio listening on ${server.address().address}:${server.address().port}`);
 });
 for (const signal of ['SIGTERM', 'SIGINT']) {
-  process.once(signal, () => server.close(() => db.close()));
+  process.once(signal, () => {
+    stopJobs.forEach(stop => stop());
+    server.close(() => db.close());
+  });
 }

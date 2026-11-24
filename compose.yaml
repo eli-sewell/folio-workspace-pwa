@@ -7,8 +7,11 @@ services:
       - "127.0.0.1:${FOLIO_PORT:-3000}:3000"
     environment:
       FOLIO_ORIGIN: "${FOLIO_ORIGIN:-http://localhost:${FOLIO_PORT:-3000}}"
+      FOLIO_BACKUP_DIR: /backups
+      FOLIO_BACKUP_KEEP: "${FOLIO_BACKUP_KEEP:-14}"
     volumes:
       - folio-data:/data
+      - folio-backups:/backups
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r => { if (!r.ok) process.exitCode = 1 }).catch(() => { process.exitCode = 1 })"]
       interval: 30s
@@ -18,3 +21,4 @@ services:
 
 volumes:
   folio-data:
+  folio-backups:

@@ -7,11 +7,14 @@ COPY index.html vite.config.js ./
 COPY public ./public
 COPY src ./src
 RUN npm run build:self-hosted
+RUN npm prune --omit=dev
 
 FROM node:24-bookworm-slim
 WORKDIR /app
 RUN install -d -m 0700 -o node -g node /data
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/node_modules ./node_modules
+COPY package.json ./package.json
 COPY server ./server
 RUN chmod -R a+rX /app/dist /app/server
 USER node

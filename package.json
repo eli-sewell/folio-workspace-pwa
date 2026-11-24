@@ -12,7 +12,7 @@
     "test": "node tests/smoke.cjs",
     "serve": "node server/index.mjs",
     "account": "node server/account.mjs",
-    "test:server": "node --test tests/server.test.mjs",
+    "test:server": "node --test tests/server.test.mjs tests/backup.test.mjs tests/push.test.mjs",
     "build:self-hosted": "vite build --mode self-hosted",
     "test:web": "node --test tests/web-sync.test.mjs"
   },
@@ -27,7 +27,8 @@
     "@tiptap/extension-task-list": "^3.7.2",
     "@tiptap/extension-text-style": "^3.7.2",
     "@tiptap/starter-kit": "^3.7.2",
-    "lucide": "^0.468.0"
+    "lucide": "^0.468.0",
+    "web-push": "3.6.7"
   },
   "devDependencies": {
     "electron": "^39.0.0",

@@ -1,4 +1,5 @@
 import { localAccountDialog } from './local-account.js'
+import { configureLocalPush } from './local-push.js'
 
 const accountKey = 'folio-local:account'
 const tabKey = 'folio-local:tab'
@@ -47,6 +48,7 @@ async function claimTab() {
 }
 
 export function addLocalSync(storage, database) {
+  configureLocalPush()
   const guest = { load: storage.load, save: storage.save }
   let account, tab, state, ui, timer, running, retryAfterSync = false, needsSignIn = true, conflict = false
   const draftPrefix = () => 'local-draft:' + account.id + ':'
@@ -117,10 +119,12 @@ export function addLocalSync(storage, database) {
       }
     }
     if (!account) {
+      window.folioPushOwner = undefined
       storage.accountLabel = 'Sign in'
       return guest.load()
     }
     storage.accountLabel = 'Account'
+    window.folioPushOwner = account.id
     tab = await claimTab()
     state = await read('get', draftKey()) || await read('get', cacheKey())
     if (!state?.dirty && !needsSignIn) {

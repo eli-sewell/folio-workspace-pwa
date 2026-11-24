@@ -8,10 +8,14 @@ export function openDatabase(filename = process.env.FOLIO_DB || '/data/folio.sql
   try {
     db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; BEGIN IMMEDIATE;');
     const version = db.prepare('PRAGMA user_version').get().user_version;
-    if (version > 1) throw new Error('The database requires a newer version of Folio.');
+    if (version > 2) throw new Error('The database requires a newer version of Folio.');
     if (version === 0) {
       db.exec(readFileSync(new URL('./migrations/001.sql', import.meta.url), 'utf8'));
       db.exec('PRAGMA user_version = 1;');
+    }
+    if (version < 2) {
+      db.exec(readFileSync(new URL('./migrations/002.sql', import.meta.url), 'utf8'));
+      db.exec('PRAGMA user_version = 2;');
     }
     db.exec('COMMIT;');
     return db;

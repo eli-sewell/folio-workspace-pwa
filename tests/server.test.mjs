@@ -9,7 +9,7 @@ import { test } from 'node:test';
 test('local accounts, session revocation, workspace ownership and revision checks survive a restart', { timeout: 20_000 }, async t => {
   const directory = await mkdtemp(join(tmpdir(), 'folio-server-'));
   const origin = 'https://folio.example.test';
-  const env = { ...process.env, HOST: '127.0.0.1', PORT: '0', FOLIO_ORIGIN: origin, FOLIO_DB: join(directory, 'folio.sqlite') };
+  const env = { ...process.env, HOST: '127.0.0.1', PORT: '0', FOLIO_ORIGIN: origin, FOLIO_DB: join(directory, 'folio.sqlite'), FOLIO_DISABLE_JOBS: '1' };
   const password = 'a test password with enough characters';
   let server;
   let base;
@@ -67,6 +67,16 @@ test('local accounts, session revocation, workspace ownership and revision check
   const { revision } = await initial.json();
   assert.equal(await (await request('workspace', { cookie: second })).json(), null);
   const identity = await (await request('session', { cookie: first })).json();
+  assert.match((await (await request('push/key', { cookie: first })).json()).publicKey, /^[A-Za-z0-9_-]+$/);
+  assert.deepEqual(await (await request('push/devices', { cookie: first })).json(), []);
+  const subscription = {
+    endpoint: 'https://fcm.googleapis.com/fcm/send/test-device',
+    keys: { p256dh: 'A'.repeat(32), auth: 'B'.repeat(24) },
+  };
+  assert.equal((await request('push/devices', { method: 'POST', cookie: first, body: { subscription } })).status, 204);
+  assert.deepEqual(await (await request('push/devices', { cookie: first })).json(), [{ endpoint: subscription.endpoint }]);
+  assert.equal((await request('push/devices', { method: 'DELETE', cookie: first, body: { endpoint: subscription.endpoint } })).status, 204);
+  assert.deepEqual(await (await request('push/devices', { cookie: first })).json(), []);
   assert.equal((await request('workspace', { cookie: second, headers: { 'X-Folio-Account': identity.id } })).status, 401);
   assert.equal((await request('workspace', { cookie: first, headers: { 'If-None-Match': '"' + revision + '"' } })).status, 304);
   const edits = await Promise.all([save(revision), save(revision)]);
